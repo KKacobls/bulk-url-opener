@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>批次網址開啟器</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 90%;
+            max-width: 600px;
+        }
+        h2 {
+            margin-top: 0;
+            color: #333;
+            text-align: center;
+        }
+        .note {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
+            border: 1px solid #ffeeba;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+            resize: vertical;
+            box-sizing: border-box; /* 確保 padding 不會撐開寬度 */
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .btn-open {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-open:hover { background-color: #218838; }
+        
+        .btn-close {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-close:hover { background-color: #c82333; }
+
+        .status {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>批次網址開啟器</h2>
+    
+    <div class="note">
+        <strong>注意：</strong> 第一次使用時，瀏覽器會封鎖彈出視窗。請務必在網址列右側點擊「允許彈出式視窗」並選擇「永遠允許」。
+    </div>
+
+    <textarea id="urlInput" placeholder="請在此貼上網址，一行一個...&#10;例如：&#10;google.com&#10;yahoo.com"></textarea>
+    
+    <div class="controls">
+        <button class="btn-open" onclick="openAllUrls()">開始開啟 (Open All)</button>
+        <button class="btn-close" onclick="closeAllUrls()">全部關閉 (Close All)</button>
+    </div>
+    <div class="status" id="statusMsg">等待輸入...</div>
+</div>
+
+<script>
+    // 用來儲存已開啟視窗的陣列
+    let openedWindows = [];
+
+    function openAllUrls() {
+        const input = document.getElementById('urlInput').value;
+        const statusMsg = document.getElementById('statusMsg');
+        
+        // 將輸入內容依據換行符號分割，並過濾掉空白行
+        const urls = input.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+
+        if (urls.length === 0) {
+            alert("請先輸入網址！");
+            return;
+        }
+
+        // 重置陣列（如果您希望保留上次開啟的紀錄，可以把這行拿掉，但建議重置以免混亂）
+        openedWindows = []; 
+
+        let count = 0;
+        urls.forEach((url) => {
+            // 檢查網址是否包含 http/https，沒有的話自動補上 https://
+            let finalUrl = url;
+            if (!/^https?:\/\//i.test(url)) {
+                finalUrl = 'https://' + url;
+            }
+
+            // 開啟新視窗
+            const newWin = window.open(finalUrl, '_blank');
+
+            // 檢查是否成功開啟 (如果是 null 代表被攔截)
+            if (newWin) {
+                openedWindows.push(newWin);
+                count++;
+            } else {
+                console.warn("無法開啟視窗，可能被攔截: " + finalUrl);
+            }
+        });
+
+        if (count === 0) {
+            statusMsg.textContent = "所有視窗都被瀏覽器封鎖了，請允許彈出視窗。";
+            statusMsg.style.color = "red";
+        } else {
+            statusMsg.textContent = `已嘗試開啟 ${count} 個網站。`;
+            statusMsg.style.color = "#28a745";
+        }
+    }
+
+    function closeAllUrls() {
+        const statusMsg = document.getElementById('statusMsg');
+        let closedCount = 0;
+
+        if (openedWindows.length === 0) {
+            statusMsg.textContent = "目前沒有由程式開啟的視窗可供關閉。";
+            statusMsg.style.color = "#666";
+            return;
+        }
+
+        // 遍歷陣列並關閉視窗
+        openedWindows.forEach(win => {
+            // 檢查視窗物件是否存在且未被手動關閉
+            if (win && !win.closed) {
+                win.close();
+                closedCount++;
+            }
+        });
+
+        // 清空陣列
+        openedWindows = [];
+        
+        statusMsg.textContent = `已關閉 ${closedCount} 個視窗。`;
+        statusMsg.style.color = "#dc3545";
+    }
+</script>
+
+</body>
+</html>
