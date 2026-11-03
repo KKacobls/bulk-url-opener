@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Threads 觀看紀錄｜本機時間軸",
+  "short_name": "Threads 紀錄",
+  "description": "自動記錄在 Threads 實際觀看的貼文與留言；按時間查詢、重複觀看去重、本機儲存與資料匯出。",
+  "version": "1.0.0",
+  "minimum_chrome_version": "110",
+  "permissions": ["storage", "unlimitedStorage"],
+  "action": { "default_title": "Threads 觀看紀錄", "default_popup": "popup.html" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://threads.com/*", "https://www.threads.com/*", "https://threads.net/*", "https://www.threads.net/*"],
+      "js": ["core.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "dashboard.html"
+}

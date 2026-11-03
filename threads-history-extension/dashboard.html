@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threads 觀看紀錄 · 時間軸</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="logo"><span class="mark">◎</span><div><b>Threads 紀錄</b><small>LOCAL HISTORY</small></div></div>
+    <nav><a href="#timeline" class="nav-current">◷ <span>觀看時間軸</span></a><a href="#settings">⚙ <span>設定與資料</span></a></nav>
+    <div class="side-bottom"><span class="safe-point"></span> 本機儲存 · 不上傳雲端</div>
+  </aside>
+  <main>
+    <section id="timeline" class="panel">
+      <div class="eyebrow">YOUR THREADS ACTIVITY</div>
+      <div class="heading-row"><div><h1>觀看時間軸</h1><p class="subline">找回滑過的貼文，以及你點開的留言串內容。</p></div><a class="external" href="https://www.threads.com/" target="_blank" rel="noopener noreferrer">前往 Threads ↗</a></div>
+      <div class="stat-grid">
+        <div class="stat"><span>不重複貼文／留言</span><strong id="stat-posts">—</strong><small>以貼文代碼去重</small></div>
+        <div class="stat"><span>紀錄事件總數</span><strong id="stat-events">—</strong><small>重複觀看也會有時間紀錄</small></div>
+        <div class="stat"><span>記錄狀態</span><strong id="stat-status" class="state">—</strong><small>只有 Threads 頁面會擷取</small></div>
+      </div>
+      <div class="tools">
+        <label class="search"><span>⌕</span><input type="search" id="search" placeholder="搜尋內文、作者或貼文 ID" autocomplete="off"></label>
+        <select id="kind" aria-label="紀錄類型"><option value="">全部事件</option><option value="view">觀看貼文</option><option value="reply">看過留言</option><option value="open">打開貼文</option></select>
+        <label class="date">起 <input id="date-from" type="date" aria-label="起始日期"></label>
+        <label class="date">迄 <input id="date-to" type="date" aria-label="結束日期"></label>
+        <button type="button" id="reset" class="ghost">清除條件</button>
+      </div>
+      <div class="list-header"><h2>歷史紀錄</h2><span id="result-hint">依觀看時間排序，最新在前</span></div>
+      <div id="records" class="records" aria-live="polite"></div>
+      <button id="more" class="more" type="button" hidden>載入更多紀錄 ↓</button>
+      <p id="read-error" class="error" role="alert"></p>
+    </section>
+    <section class="panel settings" id="settings">
+      <div class="eyebrow">DATA & PRIVACY</div>
+      <h2>設定與資料管理</h2>
+      <p class="subline">所有觀看內容只保存在這個 Chrome 使用者設定檔內，擴充功能不會將紀錄傳送到外部伺服器。</p>
+      <div class="setting-line"><div><b>自動記錄 Threads</b><small>停用後不會新增紀錄，既有資料仍保留</small></div><label class="toggle"><input id="recording" type="checkbox"><span></span></label></div>
+      <div class="setting-line"><div><b>記錄留言串內容</b><small>在貼文詳情頁記錄達到觀看門檻的其他貼文／回覆</small></div><label class="toggle"><input id="replies" type="checkbox"><span></span></label></div>
+      <div class="setting-line"><div><b>觀看判定門檻</b><small>須至少 52% 可見，連續停留這麼久才算觀看</small></div><select id="dwell"><option value="800">0.8 秒</option><option value="1500">1.5 秒（預設）</option><option value="2500">2.5 秒</option><option value="4000">4 秒</option></select></div>
+      <div class="setting-line"><div><b>重看間隔</b><small>滑離畫面至少 3.2 秒，並超過此間隔才會計入下一次</small></div><select id="cooldown"><option value="15000">15 秒</option><option value="45000">45 秒（預設）</option><option value="120000">2 分鐘</option><option value="300000">5 分鐘</option></select></div>
+      <div class="export-actions"><button id="export-json" class="btn">匯出 JSON 備份</button><button id="export-csv" class="btn">匯出 CSV 表格</button><button id="delete-all" class="danger">清空全部紀錄</button></div>
+      <p class="footnote">移除擴充功能會失去本機資料，建議定期匯出備份。私密貼文的內容可能會被保存在本機，請自行保護裝置。</p>
+      <p id="settings-message" role="status"></p>
+    </section>
+  </main>
+  <div id="detail-backdrop" class="backdrop" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <div class="dialog-heading"><h2 id="detail-title">貼文觀看紀錄</h2><button id="close-detail" aria-label="關閉">✕</button></div>
+      <div id="detail-body"></div>
+    </div>
+  </div>
+  <script src="db.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

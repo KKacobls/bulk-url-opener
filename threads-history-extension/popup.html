@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Threads 觀看紀錄</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header class="heading">
+      <span class="brand">◎</span>
+      <div><h1>Threads 觀看紀錄</h1><p>只存在這台電腦</p></div>
+    </header>
+    <section class="toggle-row">
+      <div><strong>自動記錄</strong><small id="status">載入中</small></div>
+      <label class="switch" aria-label="啟用自動記錄"><input id="enabled" type="checkbox"><span></span></label>
+    </section>
+    <div class="stats">
+      <div><b id="post-count">—</b><span>不重複貼文</span></div>
+      <div><b id="event-count">—</b><span>觀看／開啟事件</span></div>
+    </div>
+    <div class="section-heading">最近紀錄</div>
+    <div id="latest" class="latest"><p class="empty">還沒有紀錄。開啟 Threads 並瀏覽貼文就會開始。</p></div>
+    <button id="dashboard" class="primary">開啟完整時間軸 <span>↗</span></button>
+    <p id="error" role="status"></p>
+  </main>
+  <script src="db.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
