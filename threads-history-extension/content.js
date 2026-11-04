@@ -174,23 +174,112 @@
     } finally { sendInProgress = false; }
   }
 
-  const screenshotDone = new Set();
+  // DOM records are always written immediately. Screenshots run separately and
+  // only while the foreground page is stable enough to avoid stale crop bounds.
+  const screenshotCandidates = new Map();
+  const CAPTURE_STABLE_MS = 170;
+  const CAPTURE_COOLDOWN_MS = 590; // captureVisibleTab has a 2/s platform limit
+  const CAPTURE_RETRY_MS = 850;
+  const CAPTURE_MAX_PER_POST = 3;
+  const CAPTURE_MOVE_TOLERANCE = 12;
   let lastScreenshotAt = 0;
-  function maybeScreenshot(parsed, card) {
-    if (screenshotDone.has(parsed.id) || !card || document.hidden || !document.hasFocus()) return;
-    if (Date.now() - lastScreenshotAt < 1000) return;
+  let screenshotInFlight = false;
+
+  function screenRect(card) {
+    if (!card?.isConnected) return null;
     const rect = card.getBoundingClientRect();
     const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
     const right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
-    if (right - left < 140 || bottom - top < 90) return;
-    lastScreenshotAt = Date.now();
-    screenshotDone.add(parsed.id);
-    chrome.runtime.sendMessage({
-      type: 'CAPTURE_POST', id: parsed.id, viewport: { width: innerWidth, height: innerHeight },
-      rect: { left, top, right, bottom }
-    }).then(response => {
-      if (!response?.ok) screenshotDone.delete(parsed.id);
-    }).catch(() => screenshotDone.delete(parsed.id));
+    const width = right - left, height = bottom - top;
+    const totalWidth = Math.max(1, Math.min(rect.width, innerWidth));
+    const totalHeight = Math.max(1, Math.min(rect.height, innerHeight));
+    const ratio = Math.max(0, width / totalWidth) * Math.max(0, height / totalHeight);
+    // Approved 5A: >=60% visible OR >=300px of its height in the viewport.
+    if (width < 140 || height < 90 || !(ratio >= .60 || height >= 300)) return null;
+    let mediaTotal = 0, mediaReady = 0;
+    for (const img of card.querySelectorAll('img')) {
+      const box = img.getBoundingClientRect();
+      if (box.width < 90 || box.height < 65) continue;
+      mediaTotal++;
+      if (img.complete && img.naturalWidth >= 100) mediaReady++;
+    }
+    const mediaRatio = mediaTotal ? mediaReady / mediaTotal : 1;
+    const score = Math.round(width * height * (1 + ratio * 0.30 + mediaRatio * 0.18));
+    return { left, top, right, bottom, ratio, score };
+  }
+
+  function rectClose(a, b) {
+    return Boolean(a && b &&
+      ['left', 'top', 'right', 'bottom'].every(key =>
+        Math.abs(a[key] - b[key]) <= CAPTURE_MOVE_TOLERANCE));
+  }
+
+  function rememberScreenshotCandidate(parsed, card) {
+    if (!card?.isConnected) return;
+    let item = screenshotCandidates.get(parsed.id);
+    if (!item) {
+      item = { id: parsed.id, card, captures: 0, stableSince: 0,
+        lastRect: null, lastAttemptAt: 0, bestScore: 0 };
+      screenshotCandidates.set(parsed.id, item);
+    }
+    item.card = card;
+    if (screenshotCandidates.size > 120) {
+      const oldest = screenshotCandidates.keys().next().value;
+      if (oldest !== parsed.id) screenshotCandidates.delete(oldest);
+    }
+  }
+
+  function verifyScreenshot(message) {
+    if (!preferences.recording || document.hidden || !document.hasFocus()) return { ok: false };
+    if (message.pageUrl !== location.href) return { ok: false };
+    const candidate = screenshotCandidates.get(message.id);
+    const rect = candidate && screenRect(candidate.card);
+    if (!rect || !rectClose(rect, message.rect)) return { ok: false };
+    if (Math.abs(innerWidth - message.viewport.width) > 2 ||
+        Math.abs(innerHeight - message.viewport.height) > 2) return { ok: false };
+    return { ok: true };
+  }
+
+  chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if (message?.type !== 'VALIDATE_SCREENSHOT') return false;
+    respond(verifyScreenshot(message));
+    return false;
+  });
+
+  function attemptBestScreenshot() {
+    if (!preferences.recording || document.hidden || !document.hasFocus()) return;
+    const now = Date.now();
+    let best = null;
+    for (const [id, item] of screenshotCandidates) {
+      if (!item.card?.isConnected) { screenshotCandidates.delete(id); continue; }
+      if (item.captures >= CAPTURE_MAX_PER_POST || now - item.lastAttemptAt < CAPTURE_RETRY_MS) continue;
+      const rect = screenRect(item.card);
+      if (!rect) { item.stableSince = 0; item.lastRect = null; continue; }
+      if (!rectClose(item.lastRect, rect)) {
+        item.stableSince = now;
+        item.lastRect = rect;
+        continue;
+      }
+      if (now - item.stableSince < CAPTURE_STABLE_MS) continue;
+      if (item.bestScore && rect.score <= item.bestScore * 1.08) continue;
+      // Prefer a more complete / larger visible candidate.
+      if (!best || rect.score > best.rect.score) best = { id, item, rect };
+    }
+    if (!best || screenshotInFlight || now - lastScreenshotAt < CAPTURE_COOLDOWN_MS) return;
+    screenshotInFlight = true;
+    lastScreenshotAt = now;
+    best.item.lastAttemptAt = now;
+    const payload = {
+      type: 'CAPTURE_POST', id: best.id, rect: best.rect,
+      viewport: { width: innerWidth, height: innerHeight },
+      score: best.rect.score, pageUrl: location.href
+    };
+    chrome.runtime.sendMessage(payload).then(response => {
+      if (response?.ok) {
+        best.item.captures++;
+        best.item.bestScore = Math.max(best.item.bestScore, best.rect.score);
+      }
+    }).catch(() => {}).finally(() => { screenshotInFlight = false; });
   }
 
   function trackLoaded() {
@@ -212,7 +301,7 @@
         tracked.set(id, signature);
         pushEvent(candidate.parsed, 'media', candidate.card, candidate.link);
       }
-      maybeScreenshot(candidate.parsed, candidate.card);
+      rememberScreenshotCandidate(candidate.parsed, candidate.card);
       if (tracked.size > MAX_TRACKED) tracked.delete(tracked.keys().next().value);
     }
   }
@@ -222,7 +311,7 @@
     lastHref = location.href;
     context = determinePage();
     tracked.clear();
-    screenshotDone.clear();
+    screenshotCandidates.clear();
     const root = context.root;
     if (preferences.recording && root && root.id !== lastOpenedPost) {
       // Explicit permalink navigation is recorded separately from a qualified view.
@@ -256,6 +345,7 @@
   // Threads frequently uses client-side navigation without a full page reload.
   navPoll = setInterval(routeChanged, 500);
   setInterval(trackLoaded, 1400);
+  setInterval(attemptBestScreenshot, 95);
   setInterval(flush, 2500);
   loadPreferences().then(() => { routeChanged(); trackLoaded(); });
 })();

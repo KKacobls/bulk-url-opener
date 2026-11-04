@@ -132,6 +132,31 @@
       .objectStore('screenshots').get(id)))?.blob || null;
   }
 
+  async function getScreenshotEntry(id) {
+    const db = await open();
+    return (await asPromise(db.transaction('screenshots', 'readonly')
+      .objectStore('screenshots').get(id))) || null;
+  }
+
+  async function saveScreenshotIfBetter(id, blob, score) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('screenshots', 'readwrite');
+      const store = tx.objectStore('screenshots');
+      let improved = false;
+      const req = store.get(id);
+      req.onsuccess = () => {
+        if (!req.result || score > (req.result.score || 0) * 1.03) {
+          improved = true;
+          store.put({ id, blob, score, at: Date.now() });
+        }
+      };
+      tx.oncomplete = () => resolve(improved);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
   async function counts() {
     const db = await open();
     const tx = db.transaction(['posts', 'events'], 'readonly');
@@ -210,5 +235,5 @@
     }));
   }
 
-  root.ThreadsHistoryDB = { open, commitBatch, hasMedia, saveMedia, getMedia, hasScreenshot, saveScreenshot, getScreenshot, counts, query, allData, clearAll };
+  root.ThreadsHistoryDB = { open, commitBatch, hasMedia, saveMedia, getMedia, hasScreenshot, saveScreenshot, getScreenshot, getScreenshotEntry, saveScreenshotIfBetter, counts, query, allData, clearAll };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -25,6 +25,42 @@
   };
 
   const cachedObjectUrls = new Set();
+  const lightbox = document.createElement('div');
+  lightbox.style.cssText = 'position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.92);padding:24px;cursor:zoom-out';
+  lightbox.setAttribute('role', 'dialog');
+  lightbox.setAttribute('aria-modal', 'true');
+  lightbox.setAttribute('aria-label', '圖片放大檢視');
+  const enlarged = document.createElement('img');
+  enlarged.style.cssText = 'display:block;max-width:100%;max-height:95vh;object-fit:contain;cursor:default;border-radius:7px';
+  const closeLarge = document.createElement('button');
+  closeLarge.type = 'button';
+  closeLarge.textContent = '×';
+  closeLarge.setAttribute('aria-label', '關閉圖片');
+  closeLarge.style.cssText = 'position:absolute;top:12px;right:16px;font-size:32px;border:0;background:transparent;color:white;cursor:pointer';
+  lightbox.append(enlarged, closeLarge);
+  document.body.append(lightbox);
+  let previousFocus = null;
+  function hideLarge() {
+    lightbox.style.display = 'none';
+    enlarged.removeAttribute('src');
+    if (previousFocus?.isConnected) previousFocus.focus();
+  }
+  function showLarge(url) {
+    if (!url) return;
+    previousFocus = document.activeElement;
+    enlarged.src = url;
+    lightbox.style.display = 'flex';
+    closeLarge.focus();
+  }
+  lightbox.addEventListener('click', (e) => { if (e.target === lightbox) hideLarge(); });
+  enlarged.addEventListener('click', e => e.stopPropagation());
+  closeLarge.addEventListener('click', hideLarge);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && lightbox.style.display !== 'none') {
+      e.preventDefault(); e.stopImmediatePropagation(); hideLarge();
+    }
+  }, true);
+
   function mediaGallery(post) {
     if (!Array.isArray(post.images) || !post.images.length) return null;
     const gallery = document.createElement('div');
@@ -37,6 +73,7 @@
       img.alt = '貼文圖片'; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer';
       img.src = url;
       img.style.cssText = 'width:100%;height:155px;object-fit:cover;border-radius:9px';
+      a.addEventListener('click', (event) => { event.preventDefault(); showLarge(a.href); });
       a.append(img); gallery.append(a);
       ThreadsHistoryDB.getMedia(url).then(blob => {
         if (!blob || !img.isConnected) return;
@@ -67,6 +104,7 @@
       img.src = url;
       img.alt = '當時可見區域的貼文截圖';
       img.style.cssText = 'display:block;max-width:100%;max-height:430px;object-fit:contain;border:1px solid #434852;border-radius:11px;margin:10px 0';
+      a.addEventListener('click', (event) => { event.preventDefault(); showLarge(a.href); });
       a.append(img);
       holder.append(a);
     }).catch(() => {});

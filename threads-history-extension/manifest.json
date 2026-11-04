@@ -3,7 +3,7 @@
   "name": "Threads 觀看紀錄｜本機時間軸",
   "short_name": "Threads 紀錄",
   "description": "自動記錄在 Threads 實際觀看的貼文與留言；按時間查詢、重複觀看去重、本機儲存與資料匯出。",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "minimum_chrome_version": "110",
   "permissions": ["storage", "unlimitedStorage", "tabs"],
   "host_permissions": ["<all_urls>"],
