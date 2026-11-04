@@ -24,6 +24,55 @@
     return el;
   };
 
+  const cachedObjectUrls = new Set();
+  function mediaGallery(post) {
+    if (!Array.isArray(post.images) || !post.images.length) return null;
+    const gallery = document.createElement('div');
+    gallery.className = 'media-gallery';
+    gallery.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:8px;margin:12px 0 15px';
+    for (const url of post.images.slice(0, 40)) {
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      const img = document.createElement('img');
+      img.alt = '貼文圖片'; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer';
+      img.src = url;
+      img.style.cssText = 'width:100%;height:155px;object-fit:cover;border-radius:9px';
+      a.append(img); gallery.append(a);
+      ThreadsHistoryDB.getMedia(url).then(blob => {
+        if (!blob || !img.isConnected) return;
+        const local = URL.createObjectURL(blob);
+        cachedObjectUrls.add(local);
+        img.src = local; a.href = local;
+      }).catch(() => {});
+    }
+    return gallery;
+  }
+  window.addEventListener('pagehide', () => {
+    for (const url of cachedObjectUrls) URL.revokeObjectURL(url);
+    cachedObjectUrls.clear();
+  });
+
+  function screenshotPreview(post) {
+    const holder = document.createElement('div');
+    holder.className = 'post-screenshot';
+    ThreadsHistoryDB.getScreenshot(post.id).then(blob => {
+      if (!blob || !holder.isConnected) return;
+      const url = URL.createObjectURL(blob);
+      cachedObjectUrls.add(url);
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '當時可見區域的貼文截圖';
+      img.style.cssText = 'display:block;max-width:100%;max-height:430px;object-fit:contain;border:1px solid #434852;border-radius:11px;margin:10px 0';
+      a.append(img);
+      holder.append(a);
+    }).catch(() => {});
+    return holder;
+  }
+
   function renderRow(row) {
     const el = document.createElement('article');
     el.className = 'record';
@@ -47,7 +96,10 @@
     detail.type = 'button';
     detail.addEventListener('click', () => showPostDetail(row.post));
     actions.append(link, detail);
-    body.append(top, content, actions);
+    body.append(top, content, screenshotPreview(row.post));
+    const gallery = mediaGallery(row.post);
+    if (gallery) body.append(gallery);
+    body.append(actions);
     el.append(time, line, body);
     return el;
   }
@@ -90,7 +142,7 @@
       }
       state.before = result.before;
       $('more').hidden = !state.before;
-      $('result-hint').textContent = `已顯示 ${number.format(state.allRendered)} 筆 · 依觀看時間排序`;
+      $('result-hint').textContent = `已顯示 ${number.format(state.allRendered)} 筆 · 依載入時間排序`;
       if (!state.allRendered) {
         const empty = textNode('div', 'empty-view', '');
         empty.append(textNode('strong', '', '這個條件下還沒有紀錄'),
@@ -124,6 +176,9 @@
     const link = document.createElement('a');
     link.href = post.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
     link.textContent = '原始貼文 ↗'; link.style.color = '#9cdec0';
+    body.append(screenshotPreview(post));
+    const gallery = mediaGallery(post);
+    if (gallery) body.append(gallery);
     body.append(link, textNode('h3', '', '最近的觀看與開啟紀錄'));
     try {
       const result = await ThreadsHistoryDB.query({ postId: post.id, limit: 100 });
@@ -159,8 +214,6 @@
     const prefs = await chrome.storage.local.get({ recording: true, captureReplies: true, dwellMs: 1500, cooldownMs: 45000 });
     $('recording').checked = prefs.recording;
     $('replies').checked = prefs.captureReplies;
-    $('dwell').value = String(prefs.dwellMs);
-    $('cooldown').value = String(prefs.cooldownMs);
     const set = async (key, value) => {
       await chrome.storage.local.set({ [key]: value });
       $('settings-message').textContent = '設定已儲存';
@@ -168,8 +221,6 @@
     };
     $('recording').addEventListener('change', (ev) => set('recording', ev.target.checked));
     $('replies').addEventListener('change', (ev) => set('captureReplies', ev.target.checked));
-    $('dwell').addEventListener('change', (ev) => set('dwellMs', Number(ev.target.value)));
-    $('cooldown').addEventListener('change', (ev) => set('cooldownMs', Number(ev.target.value)));
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes.recording) $('recording').checked = changes.recording.newValue;
@@ -205,14 +256,14 @@
       $('settings-message').textContent = '正在準備 CSV…';
       const data = await ThreadsHistoryDB.allData();
       const posts = new Map(data.posts.map(p => [p.id, p]));
-      const header = ['觀看時間（本機）', '事件類型', '貼文ID', '作者', '貼文文字', '發文時間', '永久連結', '留言串ID', '觀看次數'];
+      const header = ['觀看時間（本機）', '事件類型', '貼文ID', '作者', '貼文文字', '發文時間', '永久連結', '留言串ID', '觀看次數', '圖片網址'];
       const lines = [header.map(csvCell).join(',')];
       for (const event of data.events) {
         const post = posts.get(event.postId) || {};
         lines.push([
           new Date(event.at).toLocaleString('zh-TW'), labelOf(event),
           event.postId, post.author, post.text, post.postedAt,
-          post.url, event.contextId, post.viewCount
+          post.url, event.contextId, post.viewCount, (post.images || []).join(' | ')
         ].map(csvCell).join(','));
       }
       // Excel in Windows reliably recognizes UTF-8 with a BOM.

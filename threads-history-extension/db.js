@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const NAME = 'threads-history-v1';
-  const VERSION = 1;
+  const VERSION = 2;
   let openPromise;
 
   function open() {
@@ -15,6 +15,8 @@
           const posts = db.createObjectStore('posts', { keyPath: 'id' });
           posts.createIndex('lastSeenAt', 'lastSeenAt');
         }
+        if (!db.objectStoreNames.contains('media')) db.createObjectStore('media', { keyPath: 'url' });
+        if (!db.objectStoreNames.contains('screenshots')) db.createObjectStore('screenshots', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('events')) {
           const events = db.createObjectStore('events', { keyPath: 'key' });
           events.createIndex('byPost', 'postId');
@@ -63,13 +65,14 @@
             author: item.post.author || prev?.author || '',
             text: item.post.text || prev?.text || '',
             postedAt: item.post.postedAt || prev?.postedAt || '',
+            images: [...new Set([...(prev?.images || []), ...(item.post.images || [])])].slice(0, 80),
             firstSeenAt: Math.min(prev?.firstSeenAt ?? Infinity, item.at),
             lastSeenAt: Math.max(prev?.lastSeenAt || 0, item.at),
             viewCount: (prev?.viewCount || 0) + (item.kind === 'view' || item.kind === 'reply' ? 1 : 0),
             openCount: (prev?.openCount || 0) + (item.kind === 'open' ? 1 : 0)
           };
           posts.put(newPost);
-          events.put({
+          if (item.kind !== 'media') events.put({
             key: item.key,
             postId: item.post.id,
             kind: item.kind,
@@ -83,6 +86,50 @@
       }
       processNext();
     }));
+  }
+
+  async function hasMedia(url) {
+    const db = await open();
+    return Boolean(await asPromise(db.transaction('media', 'readonly').objectStore('media').getKey(url)));
+  }
+
+  async function saveMedia(url, blob) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('media', 'readwrite');
+      tx.objectStore('media').put({ url, blob, savedAt: Date.now() });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function getMedia(url) {
+    const db = await open();
+    return (await asPromise(db.transaction('media', 'readonly').objectStore('media').get(url)))?.blob || null;
+  }
+
+  async function hasScreenshot(id) {
+    const db = await open();
+    return Boolean(await asPromise(db.transaction('screenshots', 'readonly')
+      .objectStore('screenshots').getKey(id)));
+  }
+
+  async function saveScreenshot(id, blob) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('screenshots', 'readwrite');
+      tx.objectStore('screenshots').put({ id, blob, at: Date.now() });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  async function getScreenshot(id) {
+    const db = await open();
+    return (await asPromise(db.transaction('screenshots', 'readonly')
+      .objectStore('screenshots').get(id)))?.blob || null;
   }
 
   async function counts() {
@@ -152,14 +199,16 @@
 
   function clearAll() {
     return open().then((db) => new Promise((resolve, reject) => {
-      const tx = db.transaction(['posts', 'events'], 'readwrite');
+      const tx = db.transaction(['posts', 'events', 'media', 'screenshots'], 'readwrite');
       tx.objectStore('posts').clear();
       tx.objectStore('events').clear();
+      tx.objectStore('media').clear();
+      tx.objectStore('screenshots').clear();
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     }));
   }
 
-  root.ThreadsHistoryDB = { open, commitBatch, counts, query, allData, clearAll };
+  root.ThreadsHistoryDB = { open, commitBatch, hasMedia, saveMedia, getMedia, hasScreenshot, saveScreenshot, getScreenshot, counts, query, allData, clearAll };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -6,10 +6,9 @@
 
   const C = ThreadsHistoryCore;
   const MAX_TRACKED = 4500;
-  const MIN_OFFSCREEN_MS = 3200;
   const tracked = new Map();
   const queue = [];
-  let preferences = { recording: true, captureReplies: true, dwellMs: 1500, cooldownMs: 45000 };
+  let preferences = { recording: true, captureReplies: true };
   let context = null;
   let lastHref = '';
   let lastOpenedPost = '';
@@ -58,10 +57,8 @@
   }
 
   function isRenderable(card) {
-    if (!card || !card.isConnected) return false;
-    if (card.closest('[role="dialog"]') && !context?.root) return false;
-    const style = window.getComputedStyle(card);
-    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0;
+    // The user requested loaded DOM entries, including those not on screen.
+    return Boolean(card && card.isConnected);
   }
 
   function getPostText(card, author) {
@@ -82,6 +79,31 @@
     return '';
   }
 
+  function getPostImages(card) {
+    if (!card) return [];
+    const result = new Set();
+    for (const img of card.querySelectorAll('img')) {
+      if (!img.complete || img.naturalWidth < 100 || img.naturalHeight < 75) continue;
+      const rect = img.getBoundingClientRect();
+      if (rect.width < 95 || rect.height < 65) continue;
+      if (img.closest('header, nav, [aria-hidden="true"]')) continue;
+      const raw = img.currentSrc || img.src || '';
+      try {
+        const url = new URL(raw, location.href);
+        if (url.protocol === 'https:' && url.href.length < 4096) result.add(url.href);
+      } catch (_) {}
+      if (result.size >= 80) break;
+    }
+    for (const video of card.querySelectorAll('video[poster]')) {
+      try {
+        const url = new URL(video.poster, location.href);
+        if (url.protocol === 'https:' && url.href.length < 4096) result.add(url.href);
+      } catch (_) {}
+      if (result.size >= 80) break;
+    }
+    return [...result];
+  }
+
   function inferPostedAt(card, link) {
     const time = link.querySelector('time') || card.querySelector('time');
     if (!time) return '';
@@ -100,9 +122,6 @@
       if (!parsed) continue;
       const card = findCard(link);
       if (!isRenderable(card)) continue;
-      const rect = card.getBoundingClientRect();
-      const ratio = C.visibilityRatio(rect, innerWidth, innerHeight);
-      if (ratio < 0.52 || Math.min(rect.height, innerHeight) * ratio < 55) continue;
       const timeLink = Boolean(link.querySelector('time'));
       const hasTime = Boolean(card.querySelector('time'));
       const isRoot = parsed.id === context?.root?.id;
@@ -119,7 +138,7 @@
       const fallback = [...document.querySelectorAll('article,[role="article"],[data-pressable-container]')]
         .find((el) => [...el.querySelectorAll('a[href*="/post/"],a[href*="/t/"]')]
           .some(a => C.parsePostUrl(a.getAttribute('href'), location.href)?.id === context.root.id)
-          && C.visibilityRatio(el.getBoundingClientRect(), innerWidth, innerHeight) >= 0.52);
+          && el.isConnected);
       if (fallback) selected.set(context.root.id, { parsed: context.root, card: fallback, link: fallback, score: 0 });
     }
     return selected;
@@ -131,7 +150,7 @@
     const postedAt = card ? inferPostedAt(card, link || card) : '';
     queue.push({
       at, kind, contextId: context?.root?.id || '', page: context?.page || 'feed',
-      post: { id: parsed.id, author: parsed.author, url: parsed.url, text, postedAt }
+      post: { id: parsed.id, author: parsed.author, url: parsed.url, text, postedAt, images: getPostImages(card) }
     });
     if (queue.length >= 10) flush();
   }
@@ -155,32 +174,46 @@
     } finally { sendInProgress = false; }
   }
 
-  function trackVisibility() {
-    if (!preferences.recording || document.hidden || !document.hasFocus()) return;
-    const now = Date.now();
-    const visible = findVisiblePosts();
-    for (const [id, candidate] of visible) {
-      let state = tracked.get(id);
-      if (!state) {
-        state = { visibleSince: now, lastLogged: 0, goneAt: 0, lastActiveAt: now };
-        tracked.set(id, state);
-      }
-      if (!state.visibleSince) state.visibleSince = now;
-      state.lastActiveAt = now;
-      if (now - state.visibleSince < Math.max(500, Number(preferences.dwellMs) || 1500)) continue;
-      if (!C.eligibleRevisit(state.lastLogged, state.goneAt, now,
-          Math.max(5000, Number(preferences.cooldownMs) || 45000), MIN_OFFSCREEN_MS)) continue;
+  const screenshotDone = new Set();
+  let lastScreenshotAt = 0;
+  function maybeScreenshot(parsed, card) {
+    if (screenshotDone.has(parsed.id) || !card || document.hidden || !document.hasFocus()) return;
+    if (Date.now() - lastScreenshotAt < 1000) return;
+    const rect = card.getBoundingClientRect();
+    const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+    const right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
+    if (right - left < 140 || bottom - top < 90) return;
+    lastScreenshotAt = Date.now();
+    screenshotDone.add(parsed.id);
+    chrome.runtime.sendMessage({
+      type: 'CAPTURE_POST', id: parsed.id, viewport: { width: innerWidth, height: innerHeight },
+      rect: { left, top, right, bottom }
+    }).then(response => {
+      if (!response?.ok) screenshotDone.delete(parsed.id);
+    }).catch(() => screenshotDone.delete(parsed.id));
+  }
+
+  function trackLoaded() {
+    if (!preferences.recording) return;
+    const posts = findVisiblePosts();
+    for (const [id, candidate] of posts) {
       const isReply = Boolean(context?.root && id !== context.root.id);
       if (isReply && !preferences.captureReplies) continue;
-      pushEvent(candidate.parsed, isReply ? 'reply' : 'view', candidate.card, candidate.link);
-      state.lastLogged = now;
-    }
-    for (const [id, state] of tracked) {
-      if (!visible.has(id) && state.visibleSince) {
-        state.visibleSince = 0;
-        state.goneAt = now;
+      const signature = JSON.stringify([
+        getPostText(candidate.card, candidate.parsed.author),
+        getPostImages(candidate.card)
+      ]);
+      const lastSignature = tracked.get(id);
+      if (lastSignature === undefined) {
+        tracked.set(id, signature);
+        pushEvent(candidate.parsed, isReply ? 'reply' : 'view', candidate.card, candidate.link);
+      } else if (lastSignature !== signature) {
+        // Lazy images / edited DOM update the saved snapshot, not view count.
+        tracked.set(id, signature);
+        pushEvent(candidate.parsed, 'media', candidate.card, candidate.link);
       }
-      if (tracked.size > MAX_TRACKED && !visible.has(id) && now - state.lastActiveAt > 300000) tracked.delete(id);
+      maybeScreenshot(candidate.parsed, candidate.card);
+      if (tracked.size > MAX_TRACKED) tracked.delete(tracked.keys().next().value);
     }
   }
 
@@ -188,43 +221,41 @@
     if (location.href === lastHref) return;
     lastHref = location.href;
     context = determinePage();
+    tracked.clear();
+    screenshotDone.clear();
     const root = context.root;
     if (preferences.recording && root && root.id !== lastOpenedPost) {
       // Explicit permalink navigation is recorded separately from a qualified view.
       pushEvent(root, 'open');
     }
     lastOpenedPost = root?.id || '';
-    trackVisibility();
+    trackLoaded();
   }
 
   function scheduleSoon() {
     if (scanTimer) return;
-    scanTimer = setTimeout(() => { scanTimer = null; trackVisibility(); }, 450);
+    scanTimer = setTimeout(() => { scanTimer = null; trackLoaded(); }, 180);
   }
 
   window.addEventListener('scroll', scheduleSoon, { passive: true });
   window.addEventListener('resize', scheduleSoon, { passive: true });
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      for (const state of tracked.values()) { state.visibleSince = 0; state.goneAt = Date.now(); }
-      flush();
-    } else scheduleSoon();
-  });
+  // Deferred image load events update the archived media list.
+  document.addEventListener('load', (event) => {
+    if (event.target instanceof HTMLImageElement || event.target instanceof HTMLVideoElement) scheduleSoon();
+  }, true);
   window.addEventListener('focus', scheduleSoon);
-  window.addEventListener('blur', () => {
-    for (const state of tracked.values()) { state.visibleSince = 0; state.goneAt = Date.now(); }
-  });
+
   window.addEventListener('pagehide', () => { flush(); });
 
   const observer = new MutationObserver(() => {
     const now = Date.now();
-    if (now - lastMutationScan > 700) { lastMutationScan = now; scheduleSoon(); }
+    if (now - lastMutationScan > 200) { lastMutationScan = now; scheduleSoon(); }
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
   // Threads frequently uses client-side navigation without a full page reload.
   navPoll = setInterval(routeChanged, 500);
-  setInterval(trackVisibility, 700);
+  setInterval(trackLoaded, 1400);
   setInterval(flush, 2500);
-  loadPreferences().then(() => { routeChanged(); trackVisibility(); });
+  loadPreferences().then(() => { routeChanged(); trackLoaded(); });
 })();

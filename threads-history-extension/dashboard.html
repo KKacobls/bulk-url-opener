@@ -15,11 +15,11 @@
   <main>
     <section id="timeline" class="panel">
       <div class="eyebrow">YOUR THREADS ACTIVITY</div>
-      <div class="heading-row"><div><h1>觀看時間軸</h1><p class="subline">找回滑過的貼文，以及你點開的留言串內容。</p></div><a class="external" href="https://www.threads.com/" target="_blank" rel="noopener noreferrer">前往 Threads ↗</a></div>
+      <div class="heading-row"><div><h1>觀看時間軸</h1><p class="subline">找回已載入的貼文、圖片，以及留言串內容（包含未實際滑到的預載內容）。</p></div><a class="external" href="https://www.threads.com/" target="_blank" rel="noopener noreferrer">前往 Threads ↗</a></div>
       <div class="stat-grid">
         <div class="stat"><span>不重複貼文／留言</span><strong id="stat-posts">—</strong><small>以貼文代碼去重</small></div>
         <div class="stat"><span>紀錄事件總數</span><strong id="stat-events">—</strong><small>重複觀看也會有時間紀錄</small></div>
-        <div class="stat"><span>記錄狀態</span><strong id="stat-status" class="state">—</strong><small>只有 Threads 頁面會擷取</small></div>
+        <div class="stat"><span>記錄狀態</span><strong id="stat-status" class="state">—</strong><small>只要 Threads 已載入就記錄</small></div>
       </div>
       <div class="tools">
         <label class="search"><span>⌕</span><input type="search" id="search" placeholder="搜尋內文、作者或貼文 ID" autocomplete="off"></label>
@@ -39,8 +39,8 @@
       <p class="subline">所有觀看內容只保存在這個 Chrome 使用者設定檔內，擴充功能不會將紀錄傳送到外部伺服器。</p>
       <div class="setting-line"><div><b>自動記錄 Threads</b><small>停用後不會新增紀錄，既有資料仍保留</small></div><label class="toggle"><input id="recording" type="checkbox"><span></span></label></div>
       <div class="setting-line"><div><b>記錄留言串內容</b><small>在貼文詳情頁記錄達到觀看門檻的其他貼文／回覆</small></div><label class="toggle"><input id="replies" type="checkbox"><span></span></label></div>
-      <div class="setting-line"><div><b>觀看判定門檻</b><small>須至少 52% 可見，連續停留這麼久才算觀看</small></div><select id="dwell"><option value="800">0.8 秒</option><option value="1500">1.5 秒（預設）</option><option value="2500">2.5 秒</option><option value="4000">4 秒</option></select></div>
-      <div class="setting-line"><div><b>重看間隔</b><small>滑離畫面至少 3.2 秒，並超過此間隔才會計入下一次</small></div><select id="cooldown"><option value="15000">15 秒</option><option value="45000">45 秒（預設）</option><option value="120000">2 分鐘</option><option value="300000">5 分鐘</option></select></div>
+      
+      
       <div class="export-actions"><button id="export-json" class="btn">匯出 JSON 備份</button><button id="export-csv" class="btn">匯出 CSV 表格</button><button id="delete-all" class="danger">清空全部紀錄</button></div>
       <p class="footnote">移除擴充功能會失去本機資料，建議定期匯出備份。私密貼文的內容可能會被保存在本機，請自行保護裝置。</p>
       <p id="settings-message" role="status"></p>
